@@ -1,7 +1,7 @@
 mod weather;
 
 use anyhow::Context as _;
-use serenity::all::{GuildId, Interaction};
+use serenity::all::{ActivityData, GuildId, Interaction, Mention, Message, OnlineStatus};
 use serenity::async_trait;
 use serenity::builder::{
     CreateCommand, CreateCommandOption, CreateInteractionResponse, CreateInteractionResponseMessage,
@@ -21,9 +21,12 @@ struct Bot {
 impl EventHandler for Bot {
     async fn ready(&self, ctx: Context, ready: Ready) {
         info!("{} is connected!", ready.user.name);
+        ctx.set_presence(
+            Some(ActivityData::custom("*BGM of The Terminator*")),
+            OnlineStatus::Online,
+        );
 
         let commands = vec![
-            CreateCommand::new("hello").description("Say hello"),
             CreateCommand::new("weather")
                 .description("Display the weather")
                 .add_option(
@@ -31,6 +34,27 @@ impl EventHandler for Bot {
                         serenity::all::CommandOptionType::String,
                         "place",
                         "City to lookup forecast",
+                    )
+                    .required(true),
+                ),
+            CreateCommand::new("ぬるぽ").description("ｶﾞｯ"),
+            CreateCommand::new("add")
+                .description("Add a team member")
+                .add_option(
+                    CreateCommandOption::new(
+                        serenity::all::CommandOptionType::User,
+                        "user",
+                        "User to add",
+                    )
+                    .required(true),
+                ),
+            CreateCommand::new("remove")
+                .description("Remove a team member")
+                .add_option(
+                    CreateCommandOption::new(
+                        serenity::all::CommandOptionType::User,
+                        "user",
+                        "User to remove",
                     )
                     .required(true),
                 ),
@@ -42,14 +66,16 @@ impl EventHandler for Bot {
             .await
             .unwrap();
 
-        info!("Registered commands: {:#?}", commands);
+        info!(
+            "Registered commands: {:#?}",
+            commands.iter().map(|c| c.name.clone()).collect::<Vec<_>>()
+        );
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Interaction::Command(command) = interaction {
-            let response_content = match command.data.name.as_str() {
-                "hello" => "hello".to_owned(),
-                "weather" => {
+            let data = match command.data.name.as_str() {
+                "weather" => CreateInteractionResponseMessage::new().content({
                     let argument = command
                         .data
                         .options
@@ -71,11 +97,41 @@ impl EventHandler for Bot {
                             format!("Err: {}", err)
                         }
                     }
-                }
+                }),
+                "ぬるぽ" => CreateInteractionResponseMessage::new().content(
+                    "
+ㅤ （　・∀・）　 |　|　ｶﾞｯ
+　と　　　　）　|　|
+　　 Ｙ　/ノ　　人
+　　　 /　）　 < 　>__Λ∩
+　 ＿/し'　／／. Ｖ｀Д´）/ ←お前
+　（＿フ彡　　　　　　/"
+                ),
+                "add" => CreateInteractionResponseMessage::new().content({
+                    let argument = command
+                        .data
+                        .options
+                        .iter()
+                        .find(|opt| opt.name == "user")
+                        .cloned();
+
+                    let value = argument.unwrap().value.as_user_id().unwrap();
+                    format!("Add: {}", Mention::from(value))
+                }),
+                "remove" => CreateInteractionResponseMessage::new().content({
+                    let argument = command
+                        .data
+                        .options
+                        .iter()
+                        .find(|opt| opt.name == "user")
+                        .cloned();
+
+                    let value = argument.unwrap().value;
+                    format!("Remove: {:?}", value)
+                }).ephemeral(true),
                 command => unreachable!("Unknown command: {}", command),
             };
 
-            let data = CreateInteractionResponseMessage::new().content(response_content);
             let builder = CreateInteractionResponse::Message(data);
 
             if let Err(why) = command.create_response(&ctx.http, builder).await {
