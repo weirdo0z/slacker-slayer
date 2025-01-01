@@ -1,7 +1,10 @@
 mod weather;
 
 use anyhow::Context as _;
-use serenity::all::{ActivityData, GuildId, Interaction, Mention, Message, OnlineStatus};
+use serenity::all::{
+    ActivityData, CommandOptionType, CreateEmbed, CreateEmbedAuthor, GuildId, Interaction, Mention,
+    OnlineStatus,
+};
 use serenity::async_trait;
 use serenity::builder::{
     CreateCommand, CreateCommandOption, CreateInteractionResponse, CreateInteractionResponseMessage,
@@ -31,32 +34,35 @@ impl EventHandler for Bot {
                 .description("Display the weather")
                 .add_option(
                     CreateCommandOption::new(
-                        serenity::all::CommandOptionType::String,
+                        CommandOptionType::String,
                         "place",
                         "City to lookup forecast",
                     )
                     .required(true),
                 ),
             CreateCommand::new("ぬるぽ").description("ｶﾞｯ"),
+            CreateCommand::new("config").description("Open config GUI"),
+            CreateCommand::new("import-config")
+                .description("Import config from config code")
+                .add_option(
+                    CreateCommandOption::new(
+                        CommandOptionType::String,
+                        "config",
+                        "Config code that is shown underneath the config",
+                    )
+                    .required(true),
+                ),
             CreateCommand::new("add")
                 .description("Add a team member")
                 .add_option(
-                    CreateCommandOption::new(
-                        serenity::all::CommandOptionType::User,
-                        "user",
-                        "User to add",
-                    )
-                    .required(true),
+                    CreateCommandOption::new(CommandOptionType::User, "user", "User to add")
+                        .required(true),
                 ),
             CreateCommand::new("remove")
                 .description("Remove a team member")
                 .add_option(
-                    CreateCommandOption::new(
-                        serenity::all::CommandOptionType::User,
-                        "user",
-                        "User to remove",
-                    )
-                    .required(true),
+                    CreateCommandOption::new(CommandOptionType::User, "user", "User to remove")
+                        .required(true),
                 ),
         ];
 
@@ -105,8 +111,24 @@ impl EventHandler for Bot {
 　　 Ｙ　/ノ　　人
 　　　 /　）　 < 　>__Λ∩
 　 ＿/し'　／／. Ｖ｀Д´）/ ←お前
-　（＿フ彡　　　　　　/"
+　（＿フ彡　　　　　　/",
                 ),
+                "config" => CreateInteractionResponseMessage::new().embed(
+                    CreateEmbed::new()
+                        .author(CreateEmbedAuthor::new("Slacker Slayer Config"))
+                        .description("Slacker Slayer GUI config"),
+                ),
+                "import-config" => CreateInteractionResponseMessage::new().content({
+                    let argument = command
+                        .data
+                        .options
+                        .iter()
+                        .find(|opt| opt.name == "config")
+                        .cloned();
+
+                    let value = argument.unwrap().value;
+                    format!("Import {}", value.as_str().unwrap())
+                }),
                 "add" => CreateInteractionResponseMessage::new().content({
                     let argument = command
                         .data
@@ -118,17 +140,19 @@ impl EventHandler for Bot {
                     let value = argument.unwrap().value.as_user_id().unwrap();
                     format!("Add: {}", Mention::from(value))
                 }),
-                "remove" => CreateInteractionResponseMessage::new().content({
-                    let argument = command
-                        .data
-                        .options
-                        .iter()
-                        .find(|opt| opt.name == "user")
-                        .cloned();
+                "remove" => CreateInteractionResponseMessage::new()
+                    .content({
+                        let argument = command
+                            .data
+                            .options
+                            .iter()
+                            .find(|opt| opt.name == "user")
+                            .cloned();
 
-                    let value = argument.unwrap().value;
-                    format!("Remove: {:?}", value)
-                }).ephemeral(true),
+                        let value = argument.unwrap().value;
+                        format!("Remove: {:?}", value)
+                    })
+                    .ephemeral(true),
                 command => unreachable!("Unknown command: {}", command),
             };
 
