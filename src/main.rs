@@ -1,7 +1,7 @@
 mod weather;
 
 use anyhow::Context as _;
-use serenity::all::{ActivityData, GuildId, Interaction, Mention, Message, OnlineStatus};
+use serenity::all::{ActivityData, GuildId, Interaction, Mention, OnlineStatus};
 use serenity::async_trait;
 use serenity::builder::{
     CreateCommand, CreateCommandOption, CreateInteractionResponse, CreateInteractionResponseMessage,
@@ -58,6 +58,16 @@ impl EventHandler for Bot {
                     )
                     .required(true),
                 ),
+            CreateCommand::new("progress")
+                .description("Report the progress")
+                .add_option(
+                    CreateCommandOption::new(
+                        serenity::all::CommandOptionType::String,
+                        "progress",
+                        "Progress to report",
+                    )
+                    .required(true),
+                ),
         ];
 
         let commands = &self
@@ -105,7 +115,7 @@ impl EventHandler for Bot {
 　　 Ｙ　/ノ　　人
 　　　 /　）　 < 　>__Λ∩
 　 ＿/し'　／／. Ｖ｀Д´）/ ←お前
-　（＿フ彡　　　　　　/"
+　（＿フ彡　　　　　　/",
                 ),
                 "add" => CreateInteractionResponseMessage::new().content({
                     let argument = command
@@ -118,17 +128,32 @@ impl EventHandler for Bot {
                     let value = argument.unwrap().value.as_user_id().unwrap();
                     format!("Add: {}", Mention::from(value))
                 }),
-                "remove" => CreateInteractionResponseMessage::new().content({
-                    let argument = command
-                        .data
-                        .options
-                        .iter()
-                        .find(|opt| opt.name == "user")
-                        .cloned();
+                "remove" => CreateInteractionResponseMessage::new()
+                    .content({
+                        let argument = command
+                            .data
+                            .options
+                            .iter()
+                            .find(|opt| opt.name == "user")
+                            .cloned();
 
-                    let value = argument.unwrap().value;
-                    format!("Remove: {:?}", value)
-                }).ephemeral(true),
+                        let value = argument.unwrap().value;
+                        format!("Remove: {:?}", value)
+                    })
+                    .ephemeral(true),
+                "progress" => CreateInteractionResponseMessage::new()
+                    .content({
+                        let argument = command
+                            .data
+                            .options
+                            .iter()
+                            .find(|opt| opt.name == "progress")
+                            .cloned();
+
+                        let value = argument.unwrap().value;
+                        format!("You reported the progress: {}", value.as_str().unwrap())
+                    })
+                    .ephemeral(true),
                 command => unreachable!("Unknown command: {}", command),
             };
 
