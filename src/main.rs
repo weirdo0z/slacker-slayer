@@ -67,7 +67,7 @@ impl EventHandler for Bot {
             CreateCommand::new("progress")
                 .description("Report the progress")
                 .add_option(
-                    CreateCommandOption::new(CommandOptionType::User, "user", "User to remove")
+                    CreateCommandOption::new(CommandOptionType::String, "progress", "Progress to report")
                         .required(true),
                 ),
         ];
@@ -117,7 +117,7 @@ impl EventHandler for Bot {
 　　 Ｙ　/ノ　　人
 　　　 /　）　 < 　>__Λ∩
 　 ＿/し'　／／. Ｖ｀Д´）/ ←お前
-　（＿フ彡　　　　　　/",
+　（＿フ彡　　　　　　/"
                 ),
                 "config" => CreateInteractionResponseMessage::new().embed(
                     CreateEmbed::new()
@@ -184,10 +184,20 @@ impl EventHandler for Bot {
     }
 }
 
+async fn hourly_deadline_check() {
+    loop {
+        println!("Hourly message");
+        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+    }
+}
+
 #[shuttle_runtime::main]
 async fn serenity(
     #[shuttle_runtime::Secrets] secret_store: SecretStore,
 ) -> shuttle_serenity::ShuttleSerenity {
+    // Run the hourly deadline check
+    tokio::spawn(hourly_deadline_check());
+
     // Get the discord token set in `Secrets.toml`
     let discord_token = secret_store
         .get("DISCORD_TOKEN")
