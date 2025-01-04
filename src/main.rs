@@ -1,4 +1,4 @@
-mod weather;
+mod config;
 
 use anyhow::Context as _;
 use serenity::all::{
@@ -15,8 +15,6 @@ use shuttle_runtime::SecretStore;
 use tracing::info;
 
 struct Bot {
-    weather_api_key: String,
-    client: reqwest::Client,
     discord_guild_id: GuildId,
 }
 
@@ -30,16 +28,6 @@ impl EventHandler for Bot {
         );
 
         let commands = vec![
-            CreateCommand::new("weather")
-                .description("Display the weather")
-                .add_option(
-                    CreateCommandOption::new(
-                        CommandOptionType::String,
-                        "place",
-                        "City to lookup forecast",
-                    )
-                    .required(true),
-                ),
             CreateCommand::new("ぬるぽ").description("ｶﾞｯ"),
             CreateCommand::new("config").description("Open config GUI"),
             CreateCommand::new("import-config")
@@ -67,8 +55,12 @@ impl EventHandler for Bot {
             CreateCommand::new("progress")
                 .description("Report the progress")
                 .add_option(
-                    CreateCommandOption::new(CommandOptionType::String, "progress", "Progress to report")
-                        .required(true),
+                    CreateCommandOption::new(
+                        CommandOptionType::String,
+                        "progress",
+                        "Progress to report",
+                    )
+                    .required(true),
                 ),
         ];
 
@@ -85,31 +77,8 @@ impl EventHandler for Bot {
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::Command(command) = interaction {
+        if let Interaction::Command(command) = &interaction {
             let data = match command.data.name.as_str() {
-                "weather" => CreateInteractionResponseMessage::new().content({
-                    let argument = command
-                        .data
-                        .options
-                        .iter()
-                        .find(|opt| opt.name == "place")
-                        .cloned();
-
-                    let value = argument.unwrap().value;
-                    let place = value.as_str().unwrap();
-
-                    let result =
-                        weather::get_forecast(place, &self.weather_api_key, &self.client).await;
-
-                    match result {
-                        Ok((location, forecast)) => {
-                            format!("Forecast: {} in {}", forecast.headline.overview, location)
-                        }
-                        Err(err) => {
-                            format!("Err: {}", err)
-                        }
-                    }
-                }),
                 "ぬるぽ" => CreateInteractionResponseMessage::new().content(
                     "
 ㅤ （　・∀・）　 |　|　ｶﾞｯ
@@ -117,35 +86,44 @@ impl EventHandler for Bot {
 　　 Ｙ　/ノ　　人
 　　　 /　）　 < 　>__Λ∩
 　 ＿/し'　／／. Ｖ｀Д´）/ ←お前
-　（＿フ彡　　　　　　/"
+　（＿フ彡　　　　　　/",
                 ),
-                "config" => CreateInteractionResponseMessage::new().embed(
-                    CreateEmbed::new()
-                        .author(CreateEmbedAuthor::new("Slacker Slayer Config"))
-                        .description("Slacker Slayer GUI config"),
-                ),
-                "import-config" => CreateInteractionResponseMessage::new().content({
-                    let argument = command
-                        .data
-                        .options
-                        .iter()
-                        .find(|opt| opt.name == "config")
-                        .cloned();
+                "config" => CreateInteractionResponseMessage::new()
+                    .embed(
+                        CreateEmbed::new()
+                            .author(CreateEmbedAuthor::new("Slacker Slayer Config"))
+                            .description("Slacker Slayer GUI config"),
+                    )
+                    .ephemeral(true),
+                "import-config" => CreateInteractionResponseMessage::new()
+                    .content({
+                        let argument = command
+                            .data
+                            .options
+                            .iter()
+                            .find(|opt| opt.name == "config")
+                            .cloned();
+                        let value = argument.unwrap().value;
 
-                    let value = argument.unwrap().value;
-                    format!("Import {}", value.as_str().unwrap())
-                }),
-                "add" => CreateInteractionResponseMessage::new().content({
-                    let argument = command
-                        .data
-                        .options
-                        .iter()
-                        .find(|opt| opt.name == "user")
-                        .cloned();
+                        let guild_id = &interaction.as_command().unwrap().guild_id.unwrap();
+                        config::import(*guild_id, value.clone()).await;
 
-                    let value = argument.unwrap().value.as_user_id().unwrap();
-                    format!("Add: {}", Mention::from(value))
-                }),
+                        format!("Imported setting from \"{}\"", value.as_str().unwrap())
+                    })
+                    .ephemeral(true),
+                "add" => CreateInteractionResponseMessage::new()
+                    .content({
+                        let argument = command
+                            .data
+                            .options
+                            .iter()
+                            .find(|opt| opt.name == "user")
+                            .cloned();
+                        let value = argument.unwrap().value.as_user_id().unwrap();
+
+                        format!("Add: {}", Mention::from(value))
+                    })
+                    .ephemeral(true),
                 "remove" => CreateInteractionResponseMessage::new()
                     .content({
                         let argument = command
@@ -154,8 +132,8 @@ impl EventHandler for Bot {
                             .iter()
                             .find(|opt| opt.name == "user")
                             .cloned();
-
                         let value = argument.unwrap().value;
+
                         format!("Remove: {:?}", value)
                     })
                     .ephemeral(true),
@@ -167,8 +145,8 @@ impl EventHandler for Bot {
                             .iter()
                             .find(|opt| opt.name == "progress")
                             .cloned();
-
                         let value = argument.unwrap().value;
+
                         format!("You reported the progress: {}", value.as_str().unwrap())
                     })
                     .ephemeral(true),
@@ -203,17 +181,12 @@ async fn serenity(
         .get("DISCORD_TOKEN")
         .context("'DISCORD_TOKEN' was not found")?;
 
-    let weather_api_key = secret_store
-        .get("WEATHER_API_KEY")
-        .context("'WEATHER_API_KEY' was not found")?;
-
     let discord_guild_id = secret_store
         .get("DISCORD_GUILD_ID")
         .context("'DISCORD_GUILD_ID' was not found")?;
 
     let client = get_client(
         &discord_token,
-        &weather_api_key,
         discord_guild_id.parse().unwrap(),
     )
     .await;
@@ -222,7 +195,6 @@ async fn serenity(
 
 pub async fn get_client(
     discord_token: &str,
-    weather_api_key: &str,
     discord_guild_id: u64,
 ) -> Client {
     // Set gateway intents, which decides what events the bot will be notified about.
@@ -231,8 +203,6 @@ pub async fn get_client(
 
     Client::builder(discord_token, intents)
         .event_handler(Bot {
-            weather_api_key: weather_api_key.to_owned(),
-            client: reqwest::Client::new(),
             discord_guild_id: GuildId::new(discord_guild_id),
         })
         .await
