@@ -1,9 +1,9 @@
-mod config;
+mod util;
 
 use anyhow::Context as _;
 use serenity::all::{
-    ActivityData, CommandOptionType, CreateEmbed, CreateEmbedAuthor, GuildId, Interaction, Mention,
-    OnlineStatus,
+    ActivityData, CommandOptionType, CreateEmbed, CreateEmbedAuthor, GatewayIntents, GuildId,
+    Interaction, Mention, OnlineStatus,
 };
 use serenity::async_trait;
 use serenity::builder::{
@@ -12,15 +12,20 @@ use serenity::builder::{
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 use shuttle_runtime::SecretStore;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::info;
 
 struct Bot {
     discord_guild_id: GuildId,
+    ctx: Arc<RwLock<Option<Context>>>,
 }
 
 #[async_trait]
 impl EventHandler for Bot {
     async fn ready(&self, ctx: Context, ready: Ready) {
+        // Store context when bot is ready
+        *self.ctx.write().await = Some(ctx.clone());
         info!("{} is connected!", ready.user.name);
         ctx.set_presence(
             Some(ActivityData::custom("*BGM of The Terminator*")),
@@ -106,7 +111,7 @@ impl EventHandler for Bot {
                         let value = argument.unwrap().value;
 
                         let guild_id = &interaction.as_command().unwrap().guild_id.unwrap();
-                        config::import(*guild_id, value.clone()).await;
+                        util::import_config(*guild_id, value.clone()).await;
 
                         format!("Imported setting from \"{}\"", value.as_str().unwrap())
                     })
@@ -162,10 +167,32 @@ impl EventHandler for Bot {
     }
 }
 
-async fn hourly_deadline_check() {
+async fn hourly_deadline_check(wrapped_ctx: Arc<RwLock<Option<Context>>>) {
+    // Wait for context to be available
     loop {
-        println!("Hourly message");
-        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        if wrapped_ctx.read().await.is_some() {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    }
+
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+        let ctx = wrapped_ctx.read().await.as_ref().unwrap().to_owned();
+        let guild_ids = match util::get_guilds(ctx).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                println!("Failed to get guilds: {}", e);
+                break;
+            }
+        };
+
+        for guild_id in guild_ids {
+            if let Ok(config) = util::read_config(guild_id).await {
+                println!("Guild {}: Config {:?}", guild_id, config);
+            }
+        }
     }
 }
 
@@ -173,10 +200,6 @@ async fn hourly_deadline_check() {
 async fn serenity(
     #[shuttle_runtime::Secrets] secret_store: SecretStore,
 ) -> shuttle_serenity::ShuttleSerenity {
-    // Run the hourly deadline check
-    tokio::spawn(hourly_deadline_check());
-
-    // Get the discord token set in `Secrets.toml`
     let discord_token = secret_store
         .get("DISCORD_TOKEN")
         .context("'DISCORD_TOKEN' was not found")?;
@@ -185,26 +208,25 @@ async fn serenity(
         .get("DISCORD_GUILD_ID")
         .context("'DISCORD_GUILD_ID' was not found")?;
 
-    let client = get_client(
-        &discord_token,
-        discord_guild_id.parse().unwrap(),
-    )
-    .await;
+    // Create shared context
+    let shared_ctx = Arc::new(RwLock::new(None));
+
+    // Create client with shared context
+    let client = {
+        let intents = GatewayIntents::GUILDS;
+        let bot = Bot {
+            discord_guild_id: GuildId::new(discord_guild_id.parse().unwrap()),
+            ctx: shared_ctx.clone(),
+        };
+
+        Client::builder(&discord_token, intents)
+            .event_handler(bot)
+            .await
+            .expect("Err creating client")
+    };
+
+    // Run the hourly deadline check with shared context
+    tokio::spawn(hourly_deadline_check(shared_ctx));
+
     Ok(client.into())
-}
-
-pub async fn get_client(
-    discord_token: &str,
-    discord_guild_id: u64,
-) -> Client {
-    // Set gateway intents, which decides what events the bot will be notified about.
-    // Here we don't need any intents so empty
-    let intents = GatewayIntents::empty();
-
-    Client::builder(discord_token, intents)
-        .event_handler(Bot {
-            discord_guild_id: GuildId::new(discord_guild_id),
-        })
-        .await
-        .expect("Err creating client")
 }
