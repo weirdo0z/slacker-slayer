@@ -177,7 +177,7 @@ async fn hourly_deadline_check(wrapped_ctx: Arc<RwLock<Option<Context>>>) {
     }
 
     loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
 
         let ctx = wrapped_ctx.read().await.as_ref().unwrap().to_owned();
         let guild_ids = match util::get_guilds(ctx).await {
